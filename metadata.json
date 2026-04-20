@@ -1,0 +1,15 @@
+{
+  "name": "ObraService",
+  "description": "SaaS B2B para digitalización de partes de horas y albaranes en construcción. mobile-first, firma eIDAS, geofencing y cumplimiento normativo.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "AI-powered CIF validation",
+    "Real-time Firestore sync",
+    "Digital signature support",
+    "Advanced Construction Analytics"
+  ]
+}

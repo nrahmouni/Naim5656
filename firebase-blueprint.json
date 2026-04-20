@@ -1,0 +1,142 @@
+{
+  "entities": {
+    "Company": {
+      "title": "Company",
+      "description": "Datos fiscales y configuración de la empresa (Constructora o Subcontrata).",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "cif": { "type": "string" },
+        "role": { "type": "string", "enum": ["CONSTRUCTORA", "SUBCONTRATA"] },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "cif", "role"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Proyecto de construcción con ubicación GPS y presupuesto.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "radius": { "type": "number" }
+          }
+        },
+        "budgetHours": { "type": "number" },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "PAUSED"] },
+        "companyId": { "type": "string" }
+      },
+      "required": ["name", "companyId"]
+    },
+    "Worker": {
+      "title": "Worker",
+      "description": "Operario vinculado a una subcontrata.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "dni": { "type": "string" },
+        "category": { "type": "string" },
+        "companyId": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name", "companyId"]
+    },
+    "DailyReport": {
+      "title": "Daily Report",
+      "description": "Reporte unificado de jornada en obra.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "encargadoId": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "SIGNED"] },
+        "signature": { "type": "string" },
+        "geoTag": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "date", "encargadoId"]
+    },
+    "WorkEntry": {
+      "title": "Work Entry",
+      "description": "Registro de horas por operario dentro de un Daily Report.",
+      "type": "object",
+      "properties": {
+        "dailyReportId": { "type": "string" },
+        "workerId": { "type": "string" },
+        "subcontractorId": { "type": "string" },
+        "hoursNormal": { "type": "number" },
+        "hoursExtra": { "type": "number" },
+        "task": { "type": "string" }
+      },
+      "required": ["dailyReportId", "workerId", "subcontractorId"]
+    },
+    "ProjectCompany": {
+      "title": "Project Company Relation",
+      "description": "Vínculo entre un proyecto y las subcontratas o encargados externos que participan en él.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "companyId": { "type": "string" },
+        "role": { "type": "string", "enum": ["CONSTRUCTORA", "SUBCONTRATA", "ENCARGADO_EXTERNO"] },
+        "invitedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "companyId", "role"]
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "Registro de trazas legales para cumplimiento eIDAS y auditoría.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "resourceId": { "type": "string" },
+        "metadata": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Incident": {
+      "title": "Incident",
+      "description": "Registro de incidencias en obra detectadas durante el reporte diario.",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "description": { "type": "string" },
+        "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "photoUrl": { "type": "string" }
+      }
+    },
+    "DeliveryNote": {
+      "title": "Delivery Note",
+      "description": "Albarán generado automáticamente para cada subcontrata.",
+      "type": "object",
+      "properties": {
+        "dailyReportId": { "type": "string" },
+        "subcontractorId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "PENDING", "DISPUTED", "APPROVED", "SIGNED"] },
+        "totalHours": { "type": "number" },
+        "disputeReason": { "type": "string" },
+        "signatureBase64": { "type": "string" },
+        "pdfUrl": { "type": "string" }
+      },
+      "required": ["dailyReportId", "subcontractorId", "status"]
+    }
+  },
+  "firestore": {
+    "/companies/{companyId}": { "schema": "Company", "description": "Maestro de empresas." },
+    "/projects/{projectId}": { "schema": "Project", "description": "Proyectos de obra." },
+    "/workers/{workerId}": { "schema": "Worker", "description": "Catálogo de operarios por empresa." },
+    "/daily_reports/{reportId}": { "schema": "DailyReport", "description": "Reportes diarios globales." },
+    "/daily_reports/{reportId}/entries/{entryId}": { "schema": "WorkEntry", "description": "Detalle de horas por operario en el reporte." },
+    "/delivery_notes/{noteId}": { "schema": "DeliveryNote", "description": "Albaranes fragmentados para cobro/pago." },
+    "/project_companies/{relationId}": { "schema": "ProjectCompany", "description": "Relación proyectos-empresas." },
+    "/audit_logs/{logId}": { "schema": "AuditLog", "description": "Trazas de auditoría." },
+    "/incidents/{incidentId}": { "schema": "Incident", "description": "Incidencias reportadas." }
+  }
+}

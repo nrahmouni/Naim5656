@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  --color-industrial-teal: #006D77;
+  --color-construction-orange: #FF6B00;
+  --color-industrial-dark: #121212;
+  --color-industrial-gray: #F5F5F7;
+}
+
+@layer base {
+  body {
+    @apply bg-industrial-gray text-industrial-dark font-sans;
+  }
+}
+
+@layer utilities {
+  .touch-target {
+    @apply min-h-[48px] min-w-[48px];
+  }
+  
+  .industrial-shadow {
+    box-shadow: 4px 4px 0px 0px rgba(0, 109, 119, 0.2);
+  }
+}

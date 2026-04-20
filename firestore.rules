@@ -1,0 +1,158 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() { return request.auth != null; }
+    function getUserData() { 
+      // Safely access user data even if document is missing
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function authCompanyId() { return getUserData().companyId; }
+    function authRole() { return getUserData().role; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isMemberOf(companyId) {
+      return isSignedIn() && authCompanyId() == companyId;
+    }
+
+    function isProjectMember(projectId) {
+      return isSignedIn() && (
+        authRole() == 'CONSTRUCTORA' ||
+        exists(/databases/$(database)/documents/project_companies/$(projectId + '_' + authCompanyId()))
+      );
+    }
+
+    // Validation Blueprints
+    function isValidCompany(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.cif is string && data.cif.size() >= 9 && data.cif.size() <= 20 &&
+             data.role in ['CONSTRUCTORA', 'SUBCONTRATA'];
+    }
+
+    function isValidProject(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.companyId is string && isValidId(data.companyId);
+    }
+
+    function isValidDailyReport(data) {
+      return data.projectId is string && isValidId(data.projectId) &&
+             data.companyId is string && isValidId(data.companyId) &&
+             data.encargadoId == request.auth.uid &&
+             data.status in ['DRAFT', 'SIGNED'];
+    }
+
+    function isValidWorker(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.companyId is string && isValidId(data.companyId);
+    }
+
+    function isValidDeliveryNote(data) {
+      return data.status in ['DRAFT', 'PENDING', 'DISPUTED', 'APPROVED', 'SIGNED'];
+    }
+
+    // 1. Companies
+    match /companies/{companyId} {
+      allow list: if isSignedIn(); 
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidCompany(incoming());
+      allow update: if isMemberOf(companyId) && (
+        getUserData().role in ['CONSTRUCTORA', 'SUBCONTRATA'] && 
+        isValidCompany(incoming())
+      );
+    }
+
+    // 2. Users
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow create, update: if request.auth.uid == userId;
+    }
+
+    // 3. Projects
+    match /projects/{projectId} {
+      allow list: if isSignedIn() && (
+        resource.data.companyId == getUserData().companyId ||
+        getUserData().role == 'SUBCONTRATA' // Allow subcontractors to browse projects to report
+      );
+      allow get: if isSignedIn() && (
+        resource.data.companyId == getUserData().companyId || 
+        getUserData().role == 'SUBCONTRATA'
+      );
+      allow create: if isSignedIn() && getUserData().role == 'CONSTRUCTORA' && isValidProject(incoming());
+    }
+
+    // 4. Workers
+    match /workers/{workerId} {
+      allow list, get: if isSignedIn() && resource.data.companyId == getUserData().companyId;
+      allow create, update: if isSignedIn() && getUserData().role in ['CONSTRUCTORA', 'SUBCONTRATA'] && isValidWorker(incoming());
+    }
+
+    // 5. Daily Reports
+    match /daily_reports/{reportId} {
+      allow list: if isSignedIn() && (
+        resource.data.companyId == getUserData().companyId ||
+        (getUserData().role == 'CONSTRUCTORA' && resource.data.mainCompanyId == getUserData().companyId)
+      );
+      allow get: if isSignedIn() && (
+        resource.data.companyId == getUserData().companyId ||
+        (getUserData().role == 'CONSTRUCTORA' && resource.data.mainCompanyId == getUserData().companyId)
+      );
+      allow create: if isSignedIn() && isValidDailyReport(incoming());
+      allow update: if isSignedIn() && 
+                    resource.data.companyId == getUserData().companyId &&
+                    existing().status != 'SIGNED' && 
+                    isValidDailyReport(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status', 'signature', 'geoTag']);
+      
+      match /entries/{entryId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn(); 
+      }
+    }
+
+    // 6. Delivery Notes (Albaranes)
+    match /delivery_notes/{noteId} {
+      allow list: if isSignedIn() && (
+        resource.data.subcontractorId == getUserData().companyId ||
+        (getUserData().role == 'CONSTRUCTORA' && resource.data.mainCompanyId == getUserData().companyId)
+      );
+      allow get: if isSignedIn() && (
+        resource.data.subcontractorId == getUserData().companyId ||
+        (getUserData().role == 'CONSTRUCTORA' && resource.data.mainCompanyId == getUserData().companyId)
+      );
+      allow create: if isSignedIn() && getUserData().role == 'CONSTRUCTORA' && isValidDeliveryNote(incoming());
+      allow update: if isSignedIn() && (
+        (incoming().subcontractorId == getUserData().companyId && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'disputeReason', 'signatureBase64']))
+        || 
+        (getUserData().role == 'CONSTRUCTORA' && existing().status == 'DISPUTED')
+      );
+    }
+
+    // 7. Project Companies (Ecosistema)
+    match /project_companies/{relationId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create, delete: if isSignedIn() && getUserData().role == 'CONSTRUCTORA';
+    }
+
+    // 8. Audit Logs
+    match /audit_logs/{logId} {
+      allow list: if isSignedIn() && getUserData().role == 'CONSTRUCTORA';
+      allow get: if isSignedIn() && (getUserData().role == 'CONSTRUCTORA' || resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+    }
+
+    // 9. Incidents
+    match /incidents/{incidentId} {
+      allow list, get: if isProjectMember(resource.data.projectId);
+      allow create: if isProjectMember(incoming().projectId);
+    }
+  }
+}
