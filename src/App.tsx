@@ -291,6 +291,15 @@ const Dashboard = ({ user, isDemo }: any) => {
   const [recentReports, setRecentReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Notifications State
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([
+    { id: 1, title: 'Albarán Escaneado', message: 'Se ha procesado un nuevo albarán y requiere validación.', time: 'Hace 5 min', read: false, link: '/notes' },
+    { id: 2, title: 'Reporte Sin Firmar', message: 'El parte diario del Residencial Las Palmas sigue en borrador.', time: 'Hace 2 horas', read: false, link: '/report' },
+    { id: 3, title: 'Presupuesto al 80%', message: 'El proyecto Torre Centro se acerca al límite de horas presupuestadas.', time: 'Ayer', read: true, link: '/projects' }
+  ]);
+  const [unreadCount, setUnreadCount] = useState(notifications.filter(n => !n.read).length);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -354,10 +363,75 @@ const Dashboard = ({ user, isDemo }: any) => {
           <button className="flex-1 md:flex-none p-3 bg-white industrial-shadow rounded-xl text-gray-400 hover:text-industrial-teal transition-colors">
             <Search size={20} />
           </button>
-          <button className="flex-1 md:flex-none p-3 bg-white industrial-shadow rounded-xl text-gray-400 hover:text-industrial-teal transition-colors relative">
-            <Bell size={20} />
-            <span className="absolute top-2 right-2 w-2 h-2 bg-construction-orange rounded-full border-2 border-white" />
-          </button>
+          
+          <div className="relative">
+            <button 
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="flex-1 md:flex-none p-3 bg-white industrial-shadow rounded-xl text-gray-400 hover:text-industrial-teal transition-colors relative"
+            >
+              <Bell size={20} />
+              {unreadCount > 0 && (
+                <span className="absolute top-2 right-2 w-2 h-2 bg-construction-orange rounded-full border-2 border-white" />
+              )}
+            </button>
+            
+            <AnimatePresence>
+              {showNotifications && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  className="absolute right-0 mt-2 w-80 bg-white rounded-2xl industrial-shadow border border-gray-100 overflow-hidden z-50"
+                >
+                  <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-sm uppercase tracking-widest text-industrial-dark">Notificaciones</h3>
+                    {unreadCount > 0 && (
+                      <button 
+                        onClick={() => {
+                          setNotifications(notifications.map(n => ({ ...n, read: true })));
+                          setUnreadCount(0);
+                        }}
+                        className="text-[10px] text-industrial-teal font-bold uppercase hover:underline"
+                      >
+                        Marcar leídas
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length > 0 ? (
+                      notifications.map(n => (
+                        <div 
+                          key={n.id} 
+                          className={`p-4 border-b border-gray-50 flex gap-3 hover:bg-gray-50 cursor-pointer ${n.read ? 'opacity-60' : ''}`}
+                          onClick={() => {
+                            // Mark single notification as read
+                            const updated = notifications.map(notif => notif.id === n.id ? { ...notif, read: true } : notif);
+                            setNotifications(updated);
+                            setUnreadCount(updated.filter(n => !n.read).length);
+                            if (n.link) navigate(n.link);
+                            setShowNotifications(false);
+                          }}
+                        >
+                          <div className={`mt-1 flex-shrink-0 w-2 h-2 rounded-full ${n.read ? 'bg-transparent' : 'bg-construction-orange'}`} />
+                          <div>
+                            <p className="font-bold text-sm text-industrial-dark">{n.title}</p>
+                            <p className="text-xs text-gray-500 mt-1">{n.message}</p>
+                            <p className="text-[10px] text-gray-400 uppercase tracking-widest mt-2">{n.time}</p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 text-center text-gray-400">
+                        <Bell size={24} className="mx-auto mb-2 opacity-50" />
+                        <p className="text-xs font-bold uppercase tracking-widest">Sin notificaciones</p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <Button 
             onClick={() => navigate('/projects')}
             variant="secondary" 

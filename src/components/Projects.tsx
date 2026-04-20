@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Plus, Users, Clock, ArrowRight, Search, BarChart3, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { dataService, ProjectData } from '../services/dataService';
@@ -8,6 +8,14 @@ export const Projects = ({ user, isDemo }: { user: any; isDemo?: boolean }) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newProject, setNewProject] = useState({
+    name: '',
+    address: '',
+    budgetHours: 0,
+    status: 'ACTIVE' as const
+  });
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -35,19 +43,22 @@ export const Projects = ({ user, isDemo }: { user: any; isDemo?: boolean }) => {
     fetchProjects();
   }, [user, isDemo]);
 
-  const handleCreateProject = async () => {
-    const name = prompt('Nombre de la obra:');
-    if (!name) return;
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProject.name) return;
 
     try {
       const companyId = user?.companyId || 'demo-company';
       await dataService.createProject({
-        name,
-        ownerCompanyId: companyId,
-        location: { lat: 40.4167, lng: -3.7033, radius: 100 },
-        budgetHours: 1000,
-        status: 'ACTIVE'
+        name: newProject.name,
+        // Optional: in an advanced version, use a geocoding service here
+        location: { lat: 40.4167, lng: -3.7033, radius: 100 }, 
+        budgetHours: newProject.budgetHours,
+        status: newProject.status,
+        ownerCompanyId: companyId
       });
+      setShowCreateModal(false);
+      setNewProject({ name: '', address: '', budgetHours: 0, status: 'ACTIVE' });
       // Refresh list
       const data = await dataService.getProjects(companyId);
       setProjects(data);
@@ -73,13 +84,78 @@ export const Projects = ({ user, isDemo }: { user: any; isDemo?: boolean }) => {
             />
           </div>
           <button 
-            onClick={handleCreateProject}
+            onClick={() => setShowCreateModal(true)}
             className="p-3 bg-industrial-teal text-white rounded-xl industrial-shadow active:scale-95 transition-all flex items-center gap-2 px-4 whitespace-nowrap"
           >
             <Plus size={20} /> <span className="font-bold text-xs uppercase tracking-widest hidden sm:inline">Nueva Obra</span>
           </button>
         </div>
       </header>
+
+      <AnimatePresence>
+        {showCreateModal && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-industrial-dark/40 backdrop-blur-sm"
+          >
+            <form onSubmit={handleCreateProject} className="bg-white p-8 rounded-[32px] industrial-shadow max-w-md w-full space-y-6">
+              <h3 className="text-2xl font-display font-bold uppercase tracking-tight">Alta de Proyecto</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Nombre de la Obra</label>
+                  <input 
+                    required
+                    value={newProject.name}
+                    onChange={e => setNewProject({...newProject, name: e.target.value})}
+                    className="w-full p-4 bg-industrial-gray rounded-xl outline-none focus:ring-2 ring-industrial-teal"
+                    placeholder="Ej. Residencial Las Palmas"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Dirección (Opcional)</label>
+                  <input 
+                    value={newProject.address}
+                    onChange={e => setNewProject({...newProject, address: e.target.value})}
+                    className="w-full p-4 bg-industrial-gray rounded-xl outline-none focus:ring-2 ring-industrial-teal"
+                    placeholder="Calle, Ciudad..."
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Presupuesto (Horas)</label>
+                  <input 
+                    type="number"
+                    required
+                    min="1"
+                    value={newProject.budgetHours || ''}
+                    onChange={e => setNewProject({...newProject, budgetHours: parseInt(e.target.value) || 0})}
+                    className="w-full p-4 bg-industrial-gray rounded-xl outline-none focus:ring-2 ring-industrial-teal"
+                    placeholder="Ej. 5000"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="flex-1 py-4 font-bold uppercase tracking-widest text-gray-400 text-xs hover:bg-gray-50 rounded-xl transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-4 bg-industrial-teal text-white font-bold uppercase tracking-widest rounded-xl shadow-lg shadow-industrial-teal/20 active:scale-95 transition-all text-xs"
+                >
+                  Confirmar Alta
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {loading ? (
         <div className="flex flex-col items-center justify-center h-64 text-industrial-teal">

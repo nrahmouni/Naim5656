@@ -128,6 +128,79 @@ export const dataService = {
     }
   },
 
+  async extractDeliveryNoteData(base64Image: string) {
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY no configurada.");
+    }
+
+    try {
+      const { GoogleGenAI, Type } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const prompt = "Extrae la información de este albarán de construcción. Necesito el nombre y el ID de la subcontrata de ser posible, la fecha del albarán, el total de horas trabajadas si aparecen, y un registro estructurado y detallado de cada uno de los materiales recibidos o partidas/conceptos detallados (descripción y cantidad) en la sección 'items'.";
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: {
+          parts: [
+            { text: prompt },
+            { 
+              inlineData: { 
+                mimeType: "image/jpeg", 
+                data: base64Image.split(',')[1] || base64Image 
+              } 
+            }
+          ]
+        },
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              subcontractorId: { type: Type.STRING },
+              subcontractorName: { type: Type.STRING },
+              date: { type: Type.STRING },
+              totalHours: { type: Type.NUMBER },
+              items: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    description: { type: Type.STRING },
+                    quantity: { type: Type.STRING }
+                  }
+                }
+              },
+              confidence: { type: Type.NUMBER, description: "Nivel de confianza de 0 a 1" }
+            },
+            required: ["subcontractorName", "date", "subcontractorId", "totalHours"]
+          }
+        }
+      });
+
+      return JSON.parse(response.text || '{}');
+    } catch (error) {
+      console.error("Error extrayendo datos de albarán:", error);
+      throw error;
+    }
+  },
+
+  async saveExtractedDeliveryNote(companyId: string, extractedData: any) {
+    const noteRef = await addDoc(collection(db, 'delivery_notes'), {
+      subcontractorId: extractedData.subcontractorName, // This is a string name for now, in a real app we'd map to ID
+      mainCompanyId: companyId,
+      status: 'PENDING',
+      items: extractedData.items || [],
+      totalHours: extractedData.totalHours || 0,
+      extractedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+      confidence: extractedData.confidence || 0,
+      isAiExtracted: true
+    });
+    await this.logAction('AI_EXTRACT_DELIVERY_NOTE', noteRef.id, { companyId });
+    return noteRef.id;
+  },
+
   // Audit Logs
   async logAction(action: string, resourceId: string, metadata: any = {}) {
     const user = auth.currentUser;
