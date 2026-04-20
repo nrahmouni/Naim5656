@@ -14,9 +14,9 @@ export const Projects = ({ user, isDemo }: { user: any; isDemo?: boolean }) => {
       try {
         if (isDemo) {
           setProjects([
-            { id: 'P-1', name: 'Residencial Las Palmas', location: { lat: 28.1248, lng: -15.4300, radius: 100 }, budgetHours: 5000, status: 'ACTIVE', companyId: 'demo' },
-            { id: 'P-2', name: 'Torre Centro', location: { lat: 40.4168, lng: -3.7038, radius: 150 }, budgetHours: 12000, status: 'ACTIVE', companyId: 'demo' },
-            { id: 'P-3', name: 'Puente Norte', location: { lat: 43.2630, lng: -2.9350, radius: 200 }, budgetHours: 8500, status: 'PAUSED', companyId: 'demo' }
+            { id: 'P-1', name: 'Residencial Las Palmas', location: { lat: 28.1248, lng: -15.4300, radius: 100 }, budgetHours: 5000, status: 'ACTIVE', ownerCompanyId: 'demo' },
+            { id: 'P-2', name: 'Torre Centro', location: { lat: 40.4168, lng: -3.7038, radius: 150 }, budgetHours: 12000, status: 'ACTIVE', ownerCompanyId: 'demo' },
+            { id: 'P-3', name: 'Puente Norte', location: { lat: 43.2630, lng: -2.9350, radius: 200 }, budgetHours: 8500, status: 'PAUSED', ownerCompanyId: 'demo' }
           ]);
           setLoading(false);
           return;
@@ -43,7 +43,7 @@ export const Projects = ({ user, isDemo }: { user: any; isDemo?: boolean }) => {
       const companyId = user?.companyId || 'demo-company';
       await dataService.createProject({
         name,
-        companyId,
+        ownerCompanyId: companyId,
         location: { lat: 40.4167, lng: -3.7033, radius: 100 },
         budgetHours: 1000,
         status: 'ACTIVE'

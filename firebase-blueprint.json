@@ -29,9 +29,9 @@
         },
         "budgetHours": { "type": "number" },
         "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "PAUSED"] },
-        "companyId": { "type": "string" }
+        "ownerCompanyId": { "type": "string" }
       },
-      "required": ["name", "companyId"]
+      "required": ["name", "ownerCompanyId"]
     },
     "Worker": {
       "title": "Worker",

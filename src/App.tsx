@@ -295,7 +295,6 @@ const Dashboard = ({ user, isDemo }: any) => {
     const fetchData = async () => {
       try {
         if (isDemo) {
-          // Mock data for demo mode to avoid Firestore permission issues
           setStats({
             activeProjects: 3,
             activeWorkers: 12,
@@ -310,17 +309,28 @@ const Dashboard = ({ user, isDemo }: any) => {
           return;
         }
 
-        if (!user.companyId) return;
+        if (!user || !user.companyId) {
+          setLoading(false);
+          return;
+        }
         
         const companyId = user.companyId;
+        console.log(`[Dashboard] Fetching data for company: ${companyId}`);
+        
         const [s, reports] = await Promise.all([
-          dataService.getDashboardStats(companyId),
-          dataService.getRecentReports(companyId)
+          dataService.getDashboardStats(companyId).catch(err => {
+            console.error("[Dashboard] Stats error:", err);
+            return null;
+          }),
+          dataService.getRecentReports(companyId, 5).catch(err => {
+            console.error("[Dashboard] Reports error:", err);
+            return null;
+          })
         ]);
         
-        setStats(s);
-        setRecentReports(reports);
-      } catch (error) {
+        if (s) setStats(s);
+        if (reports) setRecentReports(reports);
+      } catch (error: any) {
         console.error("Error fetching dashboard data:", error);
       } finally {
         setLoading(false);

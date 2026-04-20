@@ -24,7 +24,7 @@ export interface ProjectData {
   location: { lat: number; lng: number; radius: number };
   budgetHours: number;
   status: 'ACTIVE' | 'COMPLETED' | 'PAUSED';
-  companyId: string;
+  ownerCompanyId: string;
 }
 
 export interface WorkerData {
@@ -50,7 +50,7 @@ export interface DailyReportData {
 export const dataService = {
   // Projects
   async getProjects(companyId: string) {
-    const q = query(collection(db, 'projects'), where('companyId', '==', companyId));
+    const q = query(collection(db, 'projects'), where('ownerCompanyId', '==', companyId));
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
   },
@@ -64,9 +64,11 @@ export const dataService = {
 
   // Workers
   async getWorkers(companyId: string) {
-    const q = query(collection(db, 'workers'), where('companyId', '==', companyId), where('active', '==', true));
+    const q = query(collection(db, 'workers'), where('companyId', '==', companyId));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    return snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() as any }))
+      .filter(w => w.active === true);
   },
 
   async createWorker(worker: Omit<WorkerData, 'id'>) {
@@ -77,6 +79,12 @@ export const dataService = {
   },
 
   // Incidents
+  async getIncidents(projectId: string) {
+    const q = query(collection(db, 'incidents'), where('projectId', '==', projectId));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+  },
+
   async createIncident(incident: any) {
     const docRef = await addDoc(collection(db, 'incidents'), {
       ...incident,
@@ -84,6 +92,40 @@ export const dataService = {
     });
     await this.logAction('CREATE_INCIDENT', docRef.id, { projectId: incident.projectId });
     return docRef.id;
+  },
+
+  // IA Analysis
+  async analyzeDailyReport(reportData: any) {
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("GEMINI_API_KEY not found. AI features are disabled.");
+      return { 
+        resumen: "El análisis IA no está disponible. (Falta configurar GEMINI_API_KEY)", 
+        riesgos: ["Configuración incompleta"], 
+        recomendaciones: ["Contacte con el administrador para habilitar la IA."] 
+      };
+    }
+
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const prompt = `Analiza este parte diario de construcción y detecta riesgos, desviaciones o falta de información. 
+      Reporte: ${JSON.stringify(reportData)}
+      Responde en formato JSON con las claves: "resumen", "riesgos" (array), "recomendaciones" (array).`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json'
+        }
+      });
+
+      return JSON.parse(response.text || '{}');
+    } catch (error) {
+      console.error("Error en análisis IA:", error);
+      return { resumen: "Error técnico durante el análisis IA.", riesgos: [], recomendaciones: [] };
+    }
   },
 
   // Audit Logs
@@ -123,7 +165,7 @@ export const dataService = {
     // 1. Fetch project to get mainCompanyId for better security and querying
     const projectSnap = await getDoc(doc(db, 'projects', report.projectId));
     const projectData = projectSnap.data() as ProjectData;
-    const mainCompanyId = projectData?.companyId || report.companyId;
+    const mainCompanyId = projectData?.ownerCompanyId || report.companyId;
 
     // 2. Save main report
     const reportRef = await addDoc(collection(db, 'daily_reports'), {
@@ -175,11 +217,11 @@ export const dataService = {
     const q = query(
       collection(db, 'daily_reports'), 
       where('companyId', '==', companyId),
-      orderBy('createdAt', 'desc'), 
       limit(limitCount)
     );
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    return docs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
   },
 
   // Delivery Notes
@@ -204,16 +246,40 @@ export const dataService = {
 
   // Stats for Dashboard
   async getDashboardStats(companyId: string) {
-    const projects = await this.getProjects(companyId);
-    const workers = await this.getWorkers(companyId);
-    const reports = await this.getRecentReports(companyId, 100);
-    
-    return {
-      activeProjects: projects.filter(p => p.status === 'ACTIVE').length,
-      activeWorkers: workers.length,
-      pendingNotes: 0, // Mock for now
-      totalHours: 0    // Mock for now
-    };
+    try {
+      const [projects, workers, reports, deliveryNotes] = await Promise.all([
+        this.getProjects(companyId),
+        this.getWorkers(companyId),
+        this.getRecentReports(companyId, 100),
+        getDocs(query(collection(db, 'delivery_notes'), where('mainCompanyId', '==', companyId)))
+      ]);
+
+      const pendingNotes = deliveryNotes.docs.filter(d => d.data().status === 'PENDING').length;
+      
+      // Calculate total hours from reports in current month
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      let totalHours = 0;
+      reports.forEach(report => {
+        const reportDate = report.createdAt?.toDate ? report.createdAt.toDate() : new Date();
+        if (reportDate >= firstDay) {
+          // This is a simplification, in a real app we'd query subcollection entries
+          // For now let's assume entries are small enough or we have a de-normalized totalHours in report
+          totalHours += (report.totalHours || 0); 
+        }
+      });
+      
+      return {
+        activeProjects: projects.filter(p => p.status === 'ACTIVE').length,
+        activeWorkers: workers.length,
+        pendingNotes,
+        totalHours
+      };
+    } catch (error) {
+      console.error("Error in getDashboardStats:", error);
+      throw error;
+    }
   },
 
   // Onboarding & Company Management

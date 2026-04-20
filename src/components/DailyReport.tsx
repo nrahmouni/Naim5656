@@ -9,7 +9,9 @@ import {
   Camera, 
   Mic, 
   MapPin,
-  Loader2
+  Loader2,
+  BarChart3,
+  ArrowRight
 } from 'lucide-react';
 import { dataService, ProjectData, WorkerData } from '../services/dataService';
 import { useSearchParams } from 'react-router-dom';
@@ -39,6 +41,9 @@ export const DailyReport = ({ user, isDemo }: { user: any; isDemo?: boolean }) =
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  
   const [selectedProject, setSelectedProject] = useState<ProjectData | null>(null);
   const [workEntries, setWorkEntries] = useState<any>({});
   const [comments, setComments] = useState('');
@@ -48,8 +53,8 @@ export const DailyReport = ({ user, isDemo }: { user: any; isDemo?: boolean }) =
       try {
         if (isDemo) {
           const mockProjects: ProjectData[] = [
-            { id: 'P-1', name: 'Residencial Las Palmas', location: { lat: 28.1248, lng: -15.4300, radius: 100 }, budgetHours: 5000, status: 'ACTIVE', companyId: 'demo' },
-            { id: 'P-2', name: 'Torre Centro', location: { lat: 40.4168, lng: -3.7038, radius: 150 }, budgetHours: 12000, status: 'ACTIVE', companyId: 'demo' }
+            { id: 'P-1', name: 'Residencial Las Palmas', location: { lat: 28.1248, lng: -15.4300, radius: 100 }, budgetHours: 5000, status: 'ACTIVE', ownerCompanyId: 'demo' },
+            { id: 'P-2', name: 'Torre Centro', location: { lat: 40.4168, lng: -3.7038, radius: 150 }, budgetHours: 12000, status: 'ACTIVE', ownerCompanyId: 'demo' }
           ];
           const mockWorkers: WorkerData[] = [
             { id: 'W1', name: 'Antonio Garcia', dni: '12345678A', category: 'Encargado', companyId: 'demo', active: true },
@@ -101,6 +106,21 @@ export const DailyReport = ({ user, isDemo }: { user: any; isDemo?: boolean }) =
     }));
   };
 
+  const handleAiAnalyze = async () => {
+    setAnalyzing(true);
+    const entries = Object.entries(workEntries).map(([workerId, data]: [string, any]) => {
+      const worker = workers.find(w => w.id === workerId);
+      return { worker: worker?.name, ...data };
+    });
+    const analysis = await dataService.analyzeDailyReport({
+      project: selectedProject?.name,
+      entries,
+      comments
+    });
+    setAiAnalysis(analysis);
+    setAnalyzing(false);
+  };
+
   const handleSubmit = async () => {
     if (!selectedProject) return;
     if (isDemo) {
@@ -117,6 +137,7 @@ export const DailyReport = ({ user, isDemo }: { user: any; isDemo?: boolean }) =
         const worker = workers.find(w => w.id === workerId);
         return {
           workerId,
+          workerName: worker?.name,
           subcontractorId: worker?.companyId || companyId,
           hoursNormal: data.hoursNormal,
           hoursExtra: data.hoursExtra,
@@ -124,16 +145,22 @@ export const DailyReport = ({ user, isDemo }: { user: any; isDemo?: boolean }) =
         };
       });
 
-      await dataService.saveDailyReport({
+      const reportData = {
         projectId: selectedProject.id!,
         companyId,
         date: new Date().toISOString().split('T')[0],
         encargadoId: user.uid,
-        status: 'SIGNED',
+        status: 'SIGNED' as const,
         geoTag: { lat: 40.4167, lng: -3.7033 }
-      }, entries);
+      };
 
-      alert('Reporte enviado correctamente.');
+      await dataService.saveDailyReport(reportData, entries);
+
+      // Export PDF after success
+      const { pdfService } = await import('../services/pdfService');
+      pdfService.generateDailyReportPDF(reportData, entries, selectedProject.name);
+
+      alert('Reporte enviado y exportado correctamente.');
       setStep(1);
     } catch (error) {
       console.error(error);
@@ -313,11 +340,47 @@ export const DailyReport = ({ user, isDemo }: { user: any; isDemo?: boolean }) =
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="space-y-8 text-center"
+            className="space-y-6 text-center"
           >
              <h3 className="text-gray-500 font-bold text-xs uppercase tracking-[0.2em]">Validación e Envío</h3>
              
-             <div className="bg-white border-2 border-industrial-teal/20 rounded-3xl p-10 flex flex-col items-center justify-center relative industrial-shadow overflow-hidden">
+             {/* AI Analysis Section */}
+             <div className="bg-industrial-teal/5 border border-industrial-teal/10 rounded-3xl p-6 text-left">
+               <div className="flex justify-between items-center mb-4">
+                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-industrial-teal">Asistente IA ObraService</h4>
+                 <button 
+                  onClick={handleAiAnalyze}
+                  disabled={analyzing}
+                  className="px-3 py-1 bg-industrial-teal text-white text-[8px] font-bold uppercase rounded-full industrial-shadow flex items-center gap-1"
+                 >
+                   {analyzing ? <Loader2 size={10} className="animate-spin" /> : <BarChart3 size={10} />}
+                   {aiAnalysis ? 'Actualizar Análisis' : 'Analizar con Gemini'}
+                 </button>
+               </div>
+               
+               {aiAnalysis ? (
+                 <div className="space-y-4">
+                   <p className="text-xs text-gray-700 leading-relaxed italic">"{aiAnalysis.resumen}"</p>
+                   {aiAnalysis.riesgos?.length > 0 && (
+                     <div>
+                       <p className="text-[10px] font-bold text-construction-orange uppercase mb-2">Riesgos Detectados</p>
+                       <ul className="space-y-1">
+                         {aiAnalysis.riesgos.map((r: string, i: number) => (
+                           <li key={i} className="text-[10px] flex items-start gap-2">
+                             <span className="w-1 h-1 bg-construction-orange rounded-full mt-1.5 shrink-0" />
+                             {r}
+                           </li>
+                         ))}
+                       </ul>
+                     </div>
+                   )}
+                 </div>
+               ) : (
+                 <p className="text-[10px] text-gray-400 italic">Haz clic en analizar para detectar desviaciones en el reporte.</p>
+               )}
+             </div>
+
+             <div className="bg-white border-2 border-industrial-teal/20 rounded-3xl p-8 flex flex-col items-center justify-center relative industrial-shadow overflow-hidden">
                <div className="mb-6 relative">
                  <div className="absolute inset-0 bg-industrial-teal/20 rounded-full blur-2xl animate-pulse" />
                  <MapPin size={64} className="text-industrial-teal relative z-10" />
